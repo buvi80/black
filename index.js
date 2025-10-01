@@ -1,8 +1,7 @@
-const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
-import { google } from "googleapis"
-import fs from "fs-extra"
-import path from "path"
-
+import makeWASocket, { useMultiFileAuthState } from "@whiskeysockets/baileys";
+import qrcode from "qrcode-terminal";
+import { google } from "googleapis";
+import fs from "fs-extra";
 // =================== GOOGLE DRIVE SETUP ===================
 const auth = new google.auth.GoogleAuth({
   keyFile: "credentials.json",
