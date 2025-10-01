@@ -1,20 +1,12 @@
 {
   "name": "whatsapp-gdrive-bot",
   "version": "1.0.0",
-  "description": "WhatsApp bot to download Google Drive files and send via WhatsApp",
+  "description": "WhatsApp bot to fetch Google Drive files",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js"
   },
-  "keywords": [
-    "whatsapp",
-    "baileys",
-    "google-drive",
-    "bot"
-  ],
-  "author": "your-name",
-  "license": "MIT",
   "dependencies": {
     "@adiwajshing/baileys": "^6.6.0",
     "googleapis": "^144.0.0",
