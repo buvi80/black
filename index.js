@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState } from "@adiwajshing/baileys"
+const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 import { google } from "googleapis"
 import fs from "fs-extra"
 import path from "path"
