@@ -3,14 +3,13 @@ import { google } from "googleapis"
 import fs from "fs-extra"
 import path from "path"
 
-// Google Drive API Setup
+// =================== GOOGLE DRIVE SETUP ===================
 const auth = new google.auth.GoogleAuth({
   keyFile: "credentials.json",
   scopes: ["https://www.googleapis.com/auth/drive"]
 })
 const drive = google.drive({ version: "v3", auth })
 
-// Download File from Google Drive
 async function downloadFile(fileId, destPath) {
   const dest = fs.createWriteStream(destPath)
   const res = await drive.files.get(
@@ -23,20 +22,47 @@ async function downloadFile(fileId, destPath) {
   return destPath
 }
 
-// Extract File ID from Link
 function extractFileId(url) {
   const regex = /[-\w]{25,}/
   const match = url.match(regex)
   return match ? match[0] : null
 }
 
-// WhatsApp Bot
+// =================== FILE SPLITTING ===================
+async function splitFile(filePath, chunkSizeMB = 95) {
+  const stats = await fs.stat(filePath)
+  const totalSize = stats.size
+  const chunkSize = chunkSizeMB * 1024 * 1024
+
+  const chunks = []
+  const readStream = fs.createReadStream(filePath, { highWaterMark: chunkSize })
+  let part = 0
+
+  for await (const chunk of readStream) {
+    part++
+    const partPath = `${filePath}.part${part}`
+    await fs.writeFile(partPath, chunk)
+    chunks.push(partPath)
+  }
+
+  return chunks
+}
+
+// =================== WHATSAPP BOT ===================
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth")
   const sock = makeWASocket({
     auth: state,
-    printQRInTerminal: true   // ✅ Show QR code in terminal
+    printQRInTerminal: false
   })
+
+  // Pair Code (First time only)
+  if (!state.creds.registered) {
+    const phoneNumber = "94775090172"   // <-- change this
+    const code = await sock.requestPairingCode(phoneNumber)
+    console.log("📌 Pair Code:", code)
+    console.log("👉 WhatsApp → Linked Devices → Link with phone number → Enter code")
+  }
 
   sock.ev.on("messages.upsert", async (m) => {
     const msg = m.messages[0]
@@ -52,31 +78,48 @@ async function startBot() {
         return
       }
 
-      // Get file info
       const metadata = await drive.files.get({ fileId, fields: "name, size" })
       const fileName = metadata.data.name
       const fileSize = parseInt(metadata.data.size)
 
-      // WhatsApp upload limit ~100MB
-      if (fileSize > 100 * 1024 * 1024) {
-        await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ File too large for WhatsApp (${(fileSize/1024/1024).toFixed(2)} MB)` })
-        return
-      }
-
       const filePath = path.join("./downloads", fileName)
-      await sock.sendMessage(msg.key.remoteJid, { text: `📥 Downloading ${fileName}...` })
+      await sock.sendMessage(msg.key.remoteJid, { text: `📥 Downloading ${fileName} (${(fileSize/1024/1024).toFixed(2)} MB)...` })
 
       await downloadFile(fileId, filePath)
 
+      // Split if larger than 95MB
+      let filesToSend = []
+      if (fileSize > 95 * 1024 * 1024) {
+        filesToSend = await splitFile(filePath, 95)
+        await sock.sendMessage(msg.key.remoteJid, {
+          text: `⚠️ File too large. Split into ${filesToSend.length} parts.`
+        })
+      } else {
+        filesToSend = [filePath]
+      }
+
+      // Send chunks
+      for (let i = 0; i < filesToSend.length; i++) {
+        const partPath = filesToSend[i]
+        await sock.sendMessage(msg.key.remoteJid, {
+          document: { url: partPath },
+          fileName: path.basename(partPath),
+          mimetype: "application/octet-stream"
+        })
+        await new Promise(res => setTimeout(res, 3000)) // delay between sends
+      }
+
       await sock.sendMessage(msg.key.remoteJid, {
-        document: { url: filePath },
-        fileName: fileName,
-        mimetype: "application/octet-stream"
+        text: `✅ Done! Received in ${filesToSend.length} parts.\nUse 7zip / "cat file.part* > file" to join.`
       })
     }
+  })
+
+  sock.ev.on("connection.update", (update) => {
+    if (update.connection === "open") console.log("✅ Bot Connected!")
   })
 
   sock.ev.on("creds.update", saveCreds)
 }
 
-startBot()
+startBot().catch(console.error)
